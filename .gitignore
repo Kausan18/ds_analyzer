@@ -1,0 +1,43 @@
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment variables (NEVER commit this)
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# ChromaDB local storage
+chroma_db/
+*.chroma
+
+# Uploaded files / temp data
+uploads/
+temp/
+*.csv
+*.xlsx
+*.xls
+
+# PDF reports
+reports/
+*.pdf
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# VS Code settings
+.vscode/
+
+# Pytest / coverage
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Streamlit cache
+.streamlit/
