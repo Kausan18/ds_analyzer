@@ -3,8 +3,9 @@ import requests
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as gobj
+import os
+BACKEND = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-BACKEND = "http://localhost:8000"
 
 st.set_page_config(
     page_title="Dataset Quality Evaluator",

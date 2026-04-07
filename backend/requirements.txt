@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+supabase
+chromadb
+groq
+pandas
+numpy
+scipy
+scikit-learn
+plotly
+kaleido
+fpdf2
+openpyxl
