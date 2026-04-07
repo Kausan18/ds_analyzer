@@ -5,6 +5,7 @@ from services.vector_service import embed_report, query_report
 from services.report_service import generate_pdf
 from models.schemas import ChatRequest
 import io
+from models.schemas import ChatRequest, ReembedRequest
 
 router = APIRouter()
 
@@ -45,3 +46,12 @@ def download(session_id: str):
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=report_{session_id}.pdf"}
     )
+
+@router.post("/reembed")
+def reembed(req: ReembedRequest):
+    try:
+        from services.vector_service import report_store
+        report_store[req.session_id] = req.report
+        return {"message": "Report re-embedded."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
