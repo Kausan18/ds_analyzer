@@ -218,6 +218,57 @@ def generate_pdf(report: dict) -> bytes:
             top = ", ".join([f"{k}({v})" for k, v in list(s["top_values"].items())[:5]])
             pdf.bullet(f"{col} (categorical): {s['unique']} unique — top: {top}")
 
+# ── 7b. Feature Importance ────────────────────────────────────────────────
+    pdf.section_title("7b. Feature Importance")
+    fi = report.get("feature_importance", {})
+    if fi.get("available"):
+        pdf.body_text(f"Target column: '{fi['target_column']}' | Model: Random Forest {fi['model_type'].title()}")
+        fi_df = pd.DataFrame(fi["features"])
+        fig = px.bar(
+            fi_df, x="importance", y="feature",
+            orientation="h",
+            title=f"Feature Importance for '{fi['target_column']}'",
+            template="plotly_white",
+            color="importance", color_continuous_scale="Greens"
+        )
+        fig.update_layout(
+            yaxis={"categoryorder": "total ascending"},
+            margin=dict(t=50, b=40, l=120, r=20),
+            height=max(350, len(fi_df) * 25)
+        )
+        pdf.insert_chart(fig, "Fig 5: Feature importance scores", height=max(350, len(fi_df) * 25))
+        pdf.body_text("Top features:")
+        for f in fi["features"][:10]:
+            pdf.bullet(f"{f['feature']}: {f['importance']}")
+    else:
+        pdf.body_text(f"Not available: {fi.get('reason', 'unknown')}")
+
+    # ── 7c. Distributions ─────────────────────────────────────────────────────
+    pdf.section_title("7c. Column Distributions")
+    distributions = report.get("distributions", {})
+    if distributions:
+        dist_items = list(distributions.items())
+        for i in range(0, min(len(dist_items), 8), 1):
+            col_name, d = dist_items[i]
+            s = report["column_stats"].get(col_name, {})
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=d["bin_centers"], y=d["counts"],
+                name=col_name, marker_color="steelblue"
+            ))
+            if "mean" in s:
+                fig.add_vline(x=s["mean"], line_dash="dash",
+                              line_color="red", annotation_text=f"Mean={s['mean']}")
+            fig.update_layout(
+                title=f"Distribution of '{col_name}'",
+                template="plotly_white",
+                height=280,
+                margin=dict(t=40, b=30, l=40, r=20)
+            )
+            pdf.insert_chart(fig, f"Skewness={s.get('skewness', 'N/A')}", height=280)
+    else:
+        pdf.body_text("No numeric distributions available.")
+
     # ── 8. Recommendations ───────────────────────────────────────────────────
     pdf.section_title("8. Actionable Recommendations")
     if report["recommendations"]:

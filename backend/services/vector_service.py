@@ -158,6 +158,39 @@ def report_to_chunks(report):
 
     return {"texts": texts, "ids": ids}
 
+# ── Feature importance ────────────────────────────────────────────────────
+    fi = report.get("feature_importance", {})
+    if fi.get("available"):
+        top5 = fi["features"][:5]
+        bottom5 = fi["features"][-5:]
+        top_str = ", ".join([f"{f['feature']}({f['importance']})" for f in top5])
+        bot_str = ", ".join([f"{f['feature']}({f['importance']})" for f in bottom5])
+        add("feature_importance",
+            f"FEATURE IMPORTANCE (target='{fi['target_column']}', model={fi['model_type']}): "
+            f"Top features: {top_str}. "
+            f"Least important features: {bot_str}. "
+            f"Features with very low importance (<0.01) are candidates for removal.")
+    else:
+        add("feature_importance",
+            f"FEATURE IMPORTANCE: Not available. Reason: {fi.get('reason', 'unknown')}")
+
+    # ── Distributions ─────────────────────────────────────────────────────────
+    dist_summary = []
+    for col, d in report.get("distributions", {}).items():
+        stats_col = report["column_stats"].get(col, {})
+        skew = stats_col.get("skewness", 0)
+        skew_note = ""
+        if abs(skew) > 1:
+            skew_note = "highly skewed"
+        elif abs(skew) > 0.5:
+            skew_note = "moderately skewed"
+        else:
+            skew_note = "approximately normal"
+        dist_summary.append(f"'{col}' distribution is {skew_note} (skewness={skew})")
+
+    if dist_summary:
+        add("distributions",
+            f"COLUMN DISTRIBUTIONS: " + "; ".join(dist_summary))
 
 def query_report(session_id: str, question: str):
     # Get context from ChromaDB
