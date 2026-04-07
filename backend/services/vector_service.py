@@ -192,28 +192,29 @@ def report_to_chunks(report):
         add("distributions",
             f"COLUMN DISTRIBUTIONS: " + "; ".join(dist_summary))
 
+# Store full reports in memory for direct injection
+report_store = {}
+
+def embed_report(session_id: str, report: dict):
+    """Store report for direct context injection — no vector search needed at this scale."""
+    report_store[session_id] = report
+    print(f"[AI] Report stored for session {session_id}")
+
+
 def query_report(session_id: str, question: str):
-    # Get context from ChromaDB
-    try:
-        collection = chroma_client.get_collection(f"session_{session_id}")
-        results = collection.query(query_texts=[question], n_results=8)
-        context_chunks = results["documents"][0]
-        context = "\n\n".join(context_chunks)
-    except Exception as e:
-        print(f"[ChromaDB] Query error: {e}")
-        context = "No context available."
+    if session_id not in report_store:
+        return "Session not found. Please re-upload your dataset."
 
-    prompt = f"""You are a senior data scientist assistant reviewing an automated EDA (Exploratory Data Analysis) report.
-The user has uploaded a dataset and you have access to the full analysis results below.
+    report = report_store[session_id]
 
-RULES:
-- Answer only based on the EDA context provided
-- Be specific: cite exact column names, numbers, and percentages
-- Give actionable advice where relevant
-- If asked about a chart or visualization, explain what the numbers behind it mean
-- If something is not in the context, say "The EDA report doesn't have specific data on that"
+    # Build a rich but compact context string from the report
+    context = build_context_string(report)
 
-EDA REPORT CONTEXT:
+    prompt = f"""You are a senior data scientist assistant reviewing an automated EDA report.
+Answer the user's question based on the report below. Be specific — cite exact column names, numbers, and percentages.
+If something isn't in the report, say so clearly. Give actionable advice where relevant.
+
+EDA REPORT:
 {context}
 
 USER QUESTION: {question}
@@ -231,3 +232,62 @@ ANSWER:"""
     except Exception as e:
         print(f"[Groq] API error: {e}")
         raise Exception(f"Groq API error: {str(e)}")
+
+
+def build_context_string(report: dict) -> str:
+    lines = []
+
+    lines.append(f"FILE: {report['filename']} | ROWS: {report['shape']['rows']} | COLS: {report['shape']['cols']}")
+    lines.append(f"COLUMNS: {', '.join(report['columns'])}")
+
+    if report["missing"]:
+        miss = ", ".join([f"{c}({v['percent']}%)" for c, v in report["missing"].items()])
+        lines.append(f"MISSING VALUES: {miss}")
+    else:
+        lines.append("MISSING VALUES: None")
+
+    dup = report["duplicates"]
+    lines.append(f"DUPLICATES: {dup['count']} rows ({dup['percent']}%)")
+
+    if report["outliers"]:
+        out = ", ".join([f"{c}({v['count']} outliers, {v['percent']}%)" for c, v in report["outliers"].items()])
+        lines.append(f"OUTLIERS: {out}")
+    else:
+        lines.append("OUTLIERS: None detected")
+
+    if report["class_imbalance"]:
+        for col, info in report["class_imbalance"].items():
+            lines.append(f"CLASS IMBALANCE '{col}': ratio {info['imbalance_ratio']}:1, imbalanced={info['is_imbalanced']}, dist={info['distribution']}")
+
+    high_corr = report["correlations"].get("high_correlations", [])
+    if high_corr:
+        pairs = ", ".join([f"{p['col1']}&{p['col2']}(r={p['correlation']})" for p in high_corr])
+        lines.append(f"HIGH CORRELATIONS: {pairs}")
+    else:
+        lines.append("HIGH CORRELATIONS: None above 0.8")
+
+    for col, s in report["column_stats"].items():
+        if "mean" in s:
+            lines.append(f"STAT '{col}': mean={s['mean']}, std={s['std']}, min={s['min']}, max={s['max']}, skew={s['skewness']}, unique={s['unique']}, q25={s.get('q25','')}, q75={s.get('q75','')}")
+        else:
+            top = list(s.get("top_values", {}).items())[:3]
+            lines.append(f"STAT '{col}' (categorical): unique={s['unique']}, top={top}")
+
+    fi = report.get("feature_importance", {})
+    if fi.get("available"):
+        top5 = fi["features"][:5]
+        bot3 = fi["features"][-3:]
+        lines.append(f"FEATURE IMPORTANCE (target='{fi['target_column']}', model={fi['model_type']}): top={top5}, lowest={bot3}")
+
+    dist_notes = []
+    for col, d in report.get("distributions", {}).items():
+        s = report["column_stats"].get(col, {})
+        skew = s.get("skewness", 0)
+        if abs(skew) > 0.5:
+            dist_notes.append(f"{col}(skew={skew})")
+    if dist_notes:
+        lines.append(f"SKEWED COLUMNS: {', '.join(dist_notes)}")
+
+    lines.append(f"RECOMMENDATIONS: {' | '.join(report.get('recommendations', []))}")
+
+    return "\n".join(lines)
