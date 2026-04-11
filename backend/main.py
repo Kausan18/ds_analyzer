@@ -8,7 +8,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://dsanalyzer-production-4b33.up.railway.app",
-        "https://your-app.streamlit.app",  # add after Streamlit deploy
+        "https://dsanalyzer-jfnu4nign8xxggqd5xrw6t.streamlit.app/...once",  # add after Streamlit deploy
         "http://localhost:8501",   
     ],
     allow_credentials=True,
