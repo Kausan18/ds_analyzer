@@ -6,7 +6,11 @@ app = FastAPI(title="Dataset Evaluator")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://your-app.streamlit.app",  # add after Streamlit deploy
+        "http://localhost:8501",   
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
