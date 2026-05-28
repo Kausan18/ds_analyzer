@@ -30,10 +30,13 @@ for key, default in {
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def api(method, path, **kwargs):
+def api(method, path, auth=True, **kwargs):
     url = f"{BACKEND}{path}"
     try:
-        res = getattr(requests, method)(url, timeout=300, **kwargs)
+        headers = kwargs.pop("headers", {})
+        if auth and st.session_state.get("access_token"):
+            headers["Authorization"] = f"Bearer {st.session_state['access_token']}"
+        res = getattr(requests, method)(url, timeout=300, headers=headers, **kwargs)
         return res
     except requests.exceptions.ConnectionError:
         st.error("Cannot reach backend. Is uvicorn running?")
@@ -76,7 +79,7 @@ def page_login():
                 if not email or not password:
                     st.error("Please enter email and password.")
                 else:
-                    res = api("post", "/auth/login",
+                    res = api("post", "/auth/login", auth=False,
                               json={"email": email, "password": password})
                     if res and res.status_code == 200:
                         data = res.json()
@@ -102,7 +105,7 @@ def page_login():
                 elif len(password_s) < 6:
                     st.error("Password must be at least 6 characters.")
                 else:
-                    res = api("post", "/auth/signup",
+                    res = api("post", "/auth/signup", auth=False,
                               json={"email": email_s, "password": password_s})
                     if res and res.status_code == 200:
                         st.success("Account created! Please check your email to confirm, then log in.")
@@ -278,7 +281,6 @@ def page_analysis():
                     st.session_state["chat_history"] = []
 
                     api("post", "/store/save", json={
-                        "user_id": st.session_state["user_id"],
                         "session_id": data["session_id"],
                         "filename": uploaded_file.name,
                         "report": data["report"]
@@ -583,7 +585,8 @@ def page_analysis():
                             {"role": "user", "content": s})
                         with st.spinner("Thinking..."):
                             res = api("post", "/api/chat",
-                                      json={"session_id": session_id, "question": s})
+                                      json={"session_id": session_id, "question": s,
+                                            "history": st.session_state["chat_history"]})
                             answer = res.json()["answer"] if res and res.status_code == 200 else "Error"
                         st.session_state["chat_history"].append(
                             {"role": "assistant", "content": answer})
@@ -599,7 +602,8 @@ def page_analysis():
             st.session_state["chat_history"].append({"role": "user", "content": question})
             with st.spinner("Thinking..."):
                 res = api("post", "/api/chat",
-                          json={"session_id": session_id, "question": question})
+                          json={"session_id": session_id, "question": question,
+                                "history": st.session_state["chat_history"]})
                 answer = res.json()["answer"] if res and res.status_code == 200 else "Error reaching AI."
             st.session_state["chat_history"].append(
                 {"role": "assistant", "content": answer})
@@ -616,8 +620,8 @@ def page_analysis():
     with c1:
         if st.button("Generate PDF Report", type="primary"):
             with st.spinner("Generating PDF..."):
-                pdf_res = requests.get(f"{BACKEND}/api/download/{session_id}")
-            if pdf_res.status_code == 200:
+                pdf_res = api("get", f"/api/download/{session_id}")
+            if pdf_res and pdf_res.status_code == 200:
                 st.download_button(
                     "Download PDF", data=pdf_res.content,
                     file_name=f"eda_report_{session_id}.pdf",
