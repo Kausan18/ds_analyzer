@@ -1,5 +1,5 @@
 {
-  "$schema": "dsanalyzer-production-4b33.up.railway.app/railway.schema.json",
+  "$schema": "https://dsanalyzer-production-4b33.up.railway.app/railway.schema.json",
   "build": {
     "builder": "NIXPACKS"
   },
