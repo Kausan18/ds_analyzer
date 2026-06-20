@@ -4,11 +4,11 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as gobj
 import os
+
 BACKEND = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-
 st.set_page_config(
-    page_title="Dataset Quality Evaluator",
+    page_title="DS Analyzer",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -19,14 +19,335 @@ for key, default in {
     "access_token": None,
     "user_id": None,
     "user_email": None,
+    "username": None,
     "page": "login",
     "report": None,
     "session_id": None,
     "chat_history": [],
-    "active_tab": 0
+    "active_tab": 0,
+    "auth_mode": "login",        # "login" | "signup"
+    "show_signup_prompt": False,
+    "theme": "dark",             # "dark" | "light"
+    "overview_section": None,    # which section to open from overview
+    "analyzing": False,          # guard: prevent double-submit on file upload
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
+
+
+# ── Theme CSS ─────────────────────────────────────────────────────────────────
+def inject_theme():
+    dark = st.session_state["theme"] == "dark"
+
+    bg_primary   = "#0f1117" if dark else "#f5f7fa"
+    bg_secondary = "#1a1d27" if dark else "#ffffff"
+    bg_card      = "rgba(255,255,255,0.04)" if dark else "rgba(0,0,0,0.03)"
+    bg_card_hover= "rgba(255,255,255,0.08)" if dark else "rgba(0,0,0,0.06)"
+    border_color = "rgba(255,255,255,0.10)" if dark else "rgba(0,0,0,0.10)"
+    text_primary = "#f0f2f6" if dark else "#0f1117"
+    text_muted   = "#8b95a5" if dark else "#6b7280"
+    accent       = "#6366f1"
+    accent2      = "#8b5cf6"
+    success      = "#10b981"
+    warning      = "#f59e0b"
+    danger       = "#ef4444"
+
+    st.markdown(f"""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+
+    :root {{
+        --bg-primary:   {bg_primary};
+        --bg-secondary: {bg_secondary};
+        --bg-card:      {bg_card};
+        --bg-card-hover:{bg_card_hover};
+        --border:       {border_color};
+        --text:         {text_primary};
+        --text-muted:   {text_muted};
+        --accent:       {accent};
+        --accent2:      {accent2};
+        --success:      {success};
+        --warning:      {warning};
+        --danger:       {danger};
+    }}
+
+    /* ── Global ── */
+    html, body {{
+        font-family: 'DM Sans', sans-serif !important;
+        background-color: {bg_primary} !important;
+        color: {text_primary} !important;
+    }}
+    .stApp {{
+        background-color: {bg_primary} !important;
+    }}
+    .main, .main > div, .block-container {{
+        background-color: {bg_primary} !important;
+        color: {text_primary} !important;
+    }}
+    .main .block-container {{
+        padding: 1.5rem 2.5rem 3rem;
+        max-width: 1400px;
+    }}
+    /* All text elements */
+    h1, h2, h3, h4, h5, h6 {{
+        color: {text_primary} !important;
+        font-weight: 600;
+        font-family: 'DM Sans', sans-serif !important;
+    }}
+    p, span, label, li, td, th {{
+        color: {text_primary} !important;
+        font-family: 'DM Sans', sans-serif !important;
+    }}
+    /* Streamlit specific text containers */
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stMarkdownContainer"] span,
+    [data-testid="stMarkdownContainer"] li,
+    [data-testid="stMarkdownContainer"] h1,
+    [data-testid="stMarkdownContainer"] h2,
+    [data-testid="stMarkdownContainer"] h3 {{
+        color: {text_primary} !important;
+    }}
+    .stMarkdown, .stText, .stCaption {{
+        color: {text_primary} !important;
+    }}
+    [data-testid="stCaptionContainer"] {{
+        color: {text_muted} !important;
+    }}
+    /* Widget labels */
+    .stSelectbox label, .stMultiSelect label,
+    .stTextInput label, .stFileUploader label,
+    .stRadio label, .stCheckbox label {{
+        color: {text_primary} !important;
+    }}
+    /* Dataframe */
+    [data-testid="stDataFrame"] {{
+        background: var(--bg-card) !important;
+    }}
+
+    /* ── Metric cards ── */
+    [data-testid="stMetric"] {{
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px 20px;
+        backdrop-filter: blur(12px);
+        transition: border-color .2s;
+    }}
+    [data-testid="stMetric"]:hover {{ border-color: var(--accent); }}
+    [data-testid="stMetricValue"] {{ color: var(--text) !important; font-weight: 700; font-size: 1.6rem; }}
+    [data-testid="stMetricLabel"] {{ color: var(--text-muted) !important; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }}
+
+    /* ── Buttons ── */
+    .stButton > button {{
+        border-radius: 10px !important;
+        font-weight: 500 !important;
+        transition: all .2s ease !important;
+        border: 1px solid var(--border) !important;
+        background: var(--bg-card) !important;
+        color: var(--text) !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        font-size: 0.85rem !important;
+        line-height: 1.3 !important;
+        padding: 0.4rem 0.75rem !important;
+    }}
+    .stButton > button:hover {{
+        border-color: var(--accent) !important;
+        background: var(--bg-card-hover) !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(99,102,241,.25) !important;
+    }}
+    .stButton > button[kind="primary"] {{
+        background: linear-gradient(135deg, var(--accent), var(--accent2)) !important;
+        border: none !important;
+        color: #fff !important;
+    }}
+    .stButton > button[kind="primary"]:hover {{
+        opacity: .9;
+        box-shadow: 0 4px 20px rgba(99,102,241,.45) !important;
+    }}
+
+    /* ── Input fields ── */
+    .stTextInput > div > div > input,
+    .stTextArea textarea {{
+        background: {"#1e2130" if dark else "#ffffff"} !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        color: {"#f0f2f6" if dark else "#0f1117"} !important;
+        caret-color: {"#f0f2f6" if dark else "#0f1117"} !important;
+        font-family: 'DM Sans', sans-serif !important;
+    }}
+    .stTextInput > div > div > input::placeholder,
+    .stTextArea textarea::placeholder {{
+        color: {"rgba(255,255,255,0.35)" if dark else "rgba(0,0,0,0.35)"} !important;
+    }}
+    .stTextInput > div > div > input:focus,
+    .stTextArea textarea:focus {{
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 3px rgba(99,102,241,.15) !important;
+    }}
+
+    /* ── Radio pills ── */
+    .stRadio > div {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        background: transparent !important;
+    }}
+    .stRadio > div > label {{
+        background: var(--bg-card) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 999px !important;
+        padding: 6px 16px !important;
+        font-size: .85rem !important;
+        cursor: pointer;
+        transition: all .2s;
+        color: var(--text-muted) !important;
+        white-space: nowrap;
+    }}
+    .stRadio > div > label:has(input:checked) {{
+        background: linear-gradient(135deg, var(--accent), var(--accent2)) !important;
+        border-color: transparent !important;
+        color: #fff !important;
+    }}
+    .stRadio > div > label:hover {{
+        border-color: var(--accent) !important;
+        color: var(--text) !important;
+    }}
+    /* hide radio circles */
+    .stRadio > div > label > div:first-child {{
+        display: none !important;
+    }}
+
+    /* ── Chat messages (AI Assistant) ── */
+    [data-testid="stChatMessage"] {{
+        background: {"rgba(30,33,50,0.85)" if dark else "rgba(240,242,246,0.85)"} !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 12px !important;
+        color: {text_primary} !important;
+    }}
+    [data-testid="stChatMessage"] p,
+    [data-testid="stChatMessage"] span,
+    [data-testid="stChatMessage"] li,
+    [data-testid="stChatMessage"] div {{
+        color: {text_primary} !important;
+    }}
+    [data-testid="stChatMessageContent"] {{
+        background: transparent !important;
+        color: {text_primary} !important;
+    }}
+    /* Chat input box */
+    [data-testid="stChatInput"] textarea,
+    [data-testid="stChatInputTextArea"] textarea {{
+        background: {"#1e2130" if dark else "#ffffff"} !important;
+        color: {text_primary} !important;
+        border-color: var(--border) !important;
+    }}
+    [data-testid="stChatInput"] textarea::placeholder {{
+        color: var(--text-muted) !important;
+    }}
+
+    /* ── Divider ── */
+    hr {{ border-color: var(--border) !important; margin: 1.2rem 0; }}
+
+    /* ── Tabs (login page) ── */
+    .stTabs [data-baseweb="tab-list"] {{
+        gap: 8px;
+        background: var(--bg-card);
+        padding: 6px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+    }}
+    .stTabs [data-baseweb="tab"] {{
+        border-radius: 8px !important;
+        color: var(--text-muted) !important;
+        background: transparent !important;
+        font-weight: 500;
+        padding: 8px 24px !important;
+    }}
+    .stTabs [aria-selected="true"] {{
+        background: linear-gradient(135deg, var(--accent), var(--accent2)) !important;
+        color: #fff !important;
+    }}
+    .stTabs [data-baseweb="tab-border"] {{ display: none !important; }}
+
+    /* ── Alerts ── */
+    .stSuccess, .stInfo, .stWarning, .stError {{
+        border-radius: 10px !important;
+        backdrop-filter: blur(8px);
+    }}
+
+    /* ── Sidebar ── */
+    [data-testid="stSidebar"] {{
+        background: var(--bg-secondary) !important;
+        border-right: 1px solid var(--border);
+    }}
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar {{ width: 6px; height: 6px; }}
+    ::-webkit-scrollbar-track {{ background: transparent; }}
+    ::-webkit-scrollbar-thumb {{ background: var(--border); border-radius: 99px; }}
+    ::-webkit-scrollbar-thumb:hover {{ background: var(--text-muted); }}
+
+    /* ── Glass card helper ── */
+    .glass-card {{
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 28px;
+        backdrop-filter: blur(16px);
+        transition: border-color .25s, box-shadow .25s;
+    }}
+    .glass-card:hover {{
+        border-color: var(--accent);
+        box-shadow: 0 8px 32px rgba(99,102,241,.12);
+    }}
+
+    /* ── Category widget cards ── */
+    .cat-card {{
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 22px 20px 18px;
+        text-align: center;
+        cursor: pointer;
+        transition: all .25s;
+        backdrop-filter: blur(10px);
+    }}
+    .cat-card:hover {{
+        border-color: var(--accent);
+        box-shadow: 0 6px 24px rgba(99,102,241,.18);
+        transform: translateY(-2px);
+    }}
+    .cat-card .icon {{ font-size: 2rem; margin-bottom: 8px; }}
+    .cat-card .title {{ font-weight: 600; font-size: .95rem; color: var(--text); margin-bottom: 4px; }}
+    .cat-card .desc {{ font-size: .78rem; color: var(--text-muted); }}
+
+    /* ── Nav bar ── */
+    .ds-nav {{
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 0 10px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 24px;
+    }}
+    .ds-nav .brand {{
+        font-size: 1.2rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--accent), var(--accent2));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }}
+    .ds-nav .breadcrumb {{
+        font-size: .82rem;
+        color: var(--text-muted);
+    }}
+    .ds-nav .breadcrumb span {{ color: var(--accent); }}
+    </style>
+    """, unsafe_allow_html=True)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -44,101 +365,222 @@ def api(method, path, auth=True, **kwargs):
 
 
 def logout():
-    for key in ["authenticated", "access_token", "user_id", "user_email",
-                "report", "session_id", "chat_history", "active_tab"]:
+    for key in ["authenticated", "access_token", "user_id", "user_email", "username",
+                "report", "session_id", "chat_history", "active_tab",
+                "auth_mode", "show_signup_prompt", "overview_section"]:
         if key in st.session_state:
             del st.session_state[key]
     st.session_state["page"] = "login"
     st.session_state["authenticated"] = False
+    st.session_state["theme"] = st.session_state.get("theme", "dark")
     st.rerun()
 
 
-def go(page):
+def go(page, overview_section=None):
     st.session_state["page"] = page
     st.session_state["active_tab"] = 0
+    if overview_section is not None:
+        st.session_state["overview_section"] = overview_section
     st.rerun()
+
+
+def theme_toggle():
+    """Render ☀️/🌙 button inline."""
+    icon = "☀️" if st.session_state["theme"] == "dark" else "🌙"
+    if st.button(icon, key="theme_btn", help="Toggle light/dark mode"):
+        st.session_state["theme"] = "light" if st.session_state["theme"] == "dark" else "dark"
+        st.rerun()
+
+
+def nav_bar(breadcrumb_items=None, show_new_analysis=False):
+    """Top navigation bar. breadcrumb_items = list of (label, page_key or None)."""
+    cols = st.columns([4, 1, 1, 1, 1])
+    with cols[0]:
+        items = breadcrumb_items or [("DS Analyzer", None)]
+        crumb_parts = []
+        for label, page_key in items:
+            if page_key is None:
+                # Current page — bold accent
+                crumb_parts.append(
+                    f"<span style='color:var(--text);font-weight:600'>{label}</span>"
+                )
+            else:
+                # Navigable crumb — muted
+                crumb_parts.append(
+                    f"<span style='color:var(--text-muted)'>{label}</span>"
+                )
+        crumb_html = " <span style='color:var(--text-muted)'>›</span> ".join(crumb_parts)
+        st.markdown(
+            f"<div style='padding-top:8px;font-size:.88rem;line-height:1'>🔬 {crumb_html}</div>",
+            unsafe_allow_html=True
+        )
+    btn_col = 1
+    if show_new_analysis:
+        with cols[btn_col]:
+            if st.button("➕ New", use_container_width=True, key="nav_new"):
+                st.session_state["report"] = None
+                st.session_state["session_id"] = None
+                st.session_state["chat_history"] = []
+                st.session_state["active_tab"] = 0
+                go("analysis")
+        btn_col += 1
+    with cols[btn_col]:
+        if st.button("🏠 Home", use_container_width=True, key="nav_home"):
+            go("dashboard")
+        btn_col += 1
+    with cols[btn_col]:
+        theme_toggle()
+        btn_col += 1
+    with cols[btn_col]:
+        if st.button("Logout", use_container_width=True, key="nav_logout"):
+            logout()
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # PAGE: LOGIN / SIGNUP
 # ════════════════════════════════════════════════════════════════════════════
 def page_login():
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([1, 1.4, 1])
     with col2:
-        st.markdown("## Dataset Quality Evaluator")
-        st.markdown("##### AI-powered EDA and data quality analysis")
-        st.divider()
+        st.markdown("""
+        <div style='text-align:center; padding: 2rem 0 1.5rem;'>
+            <div style='font-size:2.8rem; margin-bottom:.5rem'>🔬</div>
+            <h2 style='margin:0; font-size:1.9rem; font-weight:700;
+                background: linear-gradient(135deg, #6366f1, #8b5cf6);
+                -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                background-clip: text;'>DS Analyzer</h2>
+            <p style='color: var(--text-muted); margin:.4rem 0 0; font-size:.95rem;'>
+                AI-powered EDA & data quality analysis
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 
-        tab_login, tab_signup = st.tabs(["Login", "Sign Up"])
+        # Use radio for programmatic tab switching
+        mode = st.radio("", ["Login", "Sign Up"],
+                        index=0 if st.session_state["auth_mode"] == "login" else 1,
+                        horizontal=True, key="auth_mode_radio",
+                        label_visibility="collapsed")
+        st.session_state["auth_mode"] = "login" if mode == "Login" else "signup"
+        st.markdown("")
 
-        with tab_login:
-            email = st.text_input("Email", key="login_email")
-            password = st.text_input("Password", type="password", key="login_pass")
+        if st.session_state["auth_mode"] == "login":
+            # ── Login form ──
+            with st.container():
+                email = st.text_input("Email", key="login_email", placeholder="you@example.com")
+                password = st.text_input("Password", type="password", key="login_pass",
+                                         placeholder="••••••••")
 
-            if st.button("Login", type="primary", use_container_width=True):
-                if not email or not password:
-                    st.error("Please enter email and password.")
-                else:
-                    res = api("post", "/auth/login", auth=False,
-                              json={"email": email, "password": password})
-                    if res and res.status_code == 200:
-                        data = res.json()
-                        st.session_state["authenticated"] = True
-                        st.session_state["access_token"] = data["access_token"]
-                        st.session_state["user_id"] = data["user_id"]
-                        st.session_state["user_email"] = data["email"]
-                        go("dashboard")
+                if st.button("Login", type="primary", use_container_width=True, key="login_btn"):
+                    if not email or not password:
+                        st.error("Please enter email and password.")
                     else:
-                        detail = res.json().get("detail", "Login failed.") if res else "No response."
-                        st.error(detail)
+                        res = api("post", "/auth/login", auth=False,
+                                  json={"email": email, "password": password})
+                        if res and res.status_code == 200:
+                            data = res.json()
+                            st.session_state["authenticated"] = True
+                            st.session_state["access_token"] = data["access_token"]
+                            st.session_state["user_id"] = data["user_id"]
+                            st.session_state["user_email"] = data["email"]
+                            st.session_state["username"] = data.get(
+                                "username", data["email"].split("@")[0])
+                            st.session_state["show_signup_prompt"] = False
+                            go("dashboard")
+                        else:
+                            detail = res.json().get("detail", "Login failed.") if res else "No response."
+                            st.error(detail)
+                            # Show sign-up prompt if user not found
+                            if res and any(kw in detail.lower()
+                                           for kw in ["not found", "invalid", "no user",
+                                                      "wrong", "incorrect", "user"]):
+                                st.session_state["show_signup_prompt"] = True
 
-        with tab_signup:
-            email_s = st.text_input("Email", key="signup_email")
-            password_s = st.text_input("Password (min 6 chars)", type="password", key="signup_pass")
-            password_s2 = st.text_input("Confirm Password", type="password", key="signup_pass2")
+                if st.session_state.get("show_signup_prompt"):
+                    st.info("Don't have an account yet?")
+                    if st.button("➜ Create an account", use_container_width=True,
+                                 key="goto_signup"):
+                        st.session_state["auth_mode"] = "signup"
+                        st.session_state["show_signup_prompt"] = False
+                        st.rerun()
 
-            if st.button("Create Account", type="primary", use_container_width=True):
-                if not email_s or not password_s:
-                    st.error("Please fill all fields.")
-                elif password_s != password_s2:
-                    st.error("Passwords do not match.")
-                elif len(password_s) < 6:
-                    st.error("Password must be at least 6 characters.")
-                else:
-                    res = api("post", "/auth/signup", auth=False,
-                              json={"email": email_s, "password": password_s})
-                    if res and res.status_code == 200:
-                        st.success("Account created! Please check your email to confirm, then log in.")
+        else:
+            # ── Sign-up form ──
+            with st.container():
+                username_s = st.text_input("Username", key="signup_username",
+                                           placeholder="coolname42")
+                email_s = st.text_input("Email", key="signup_email",
+                                        placeholder="you@example.com")
+                password_s = st.text_input("Password (min 6 chars)", type="password",
+                                           key="signup_pass", placeholder="••••••••")
+                password_s2 = st.text_input("Confirm Password", type="password",
+                                            key="signup_pass2", placeholder="••••••••")
+
+                if st.button("Create Account", type="primary", use_container_width=True,
+                             key="signup_btn"):
+                    if not username_s or not email_s or not password_s:
+                        st.error("Please fill all fields.")
+                    elif password_s != password_s2:
+                        st.error("Passwords do not match.")
+                    elif len(password_s) < 6:
+                        st.error("Password must be at least 6 characters.")
+                    elif len(username_s) < 2:
+                        st.error("Username must be at least 2 characters.")
                     else:
-                        detail = res.json().get("detail", "Signup failed.") if res else "No response."
-                        st.error(detail)
+                        res = api("post", "/auth/signup", auth=False,
+                                  json={"email": email_s, "password": password_s,
+                                        "username": username_s})
+                        if res and res.status_code == 200:
+                            st.success(
+                                "Account created! Please check your email to confirm, then log in.")
+                            st.session_state["auth_mode"] = "login"
+                            st.rerun()
+                        else:
+                            detail = res.json().get("detail", "Signup failed.") if res else "No response."
+                            st.error(detail)
+
+                st.markdown("")
+                st.markdown("<p style='text-align:center; color:var(--text-muted); font-size:.85rem'>"
+                            "Already have an account?</p>", unsafe_allow_html=True)
+                if st.button("➜ Sign in instead", use_container_width=True,
+                             key="goto_login"):
+                    st.session_state["auth_mode"] = "login"
+                    st.rerun()
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # PAGE: DASHBOARD
 # ════════════════════════════════════════════════════════════════════════════
 def page_dashboard():
-    col1, col2 = st.columns([5, 1])
-    with col1:
-        st.markdown(f"## Welcome back, {st.session_state['user_email'].split('@')[0]} 👋")
-        st.caption("What would you like to do today?")
-    with col2:
-        if st.button("Logout", use_container_width=True):
-            logout()
+    nav_bar([("DS Analyzer", None), ("Dashboard", None)])
 
-    st.divider()
+    username = st.session_state.get("username") or st.session_state.get(
+        "user_email", "").split("@")[0]
+
+    st.markdown(f"""
+    <div style='margin-bottom: 2rem;'>
+        <h2 style='margin:0; font-size:1.8rem; font-weight:700;'>
+            Welcome back, {username} 👋
+        </h2>
+        <p style='color: var(--text-muted); margin:.3rem 0 0;'>
+            What would you like to do today?
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
     c1, c2 = st.columns(2, gap="large")
     with c1:
         st.markdown("""
-        <div style="border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:32px; text-align:center;">
-            <div style="font-size:48px">📊</div>
-            <h3>New Analysis</h3>
-            <p style="color:#aaa">Upload a CSV or Excel dataset and get a full automated EDA report with AI insights.</p>
+        <div class="glass-card" style="text-align:center; min-height:180px;">
+            <div style="font-size:3rem; margin-bottom:12px">📊</div>
+            <h3 style="margin:0 0 8px; font-size:1.15rem">New Analysis</h3>
+            <p style="color:var(--text-muted); font-size:.88rem; margin:0">
+                Upload a CSV or Excel dataset and get a full automated EDA report with AI insights.
+            </p>
         </div>
         """, unsafe_allow_html=True)
         st.markdown("")
-        if st.button("Start New Analysis", type="primary", use_container_width=True):
+        if st.button("Start New Analysis", type="primary", use_container_width=True,
+                     key="dash_new"):
             st.session_state["report"] = None
             st.session_state["session_id"] = None
             st.session_state["chat_history"] = []
@@ -147,33 +589,39 @@ def page_dashboard():
 
     with c2:
         st.markdown("""
-        <div style="border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:32px; text-align:center;">
-            <div style="font-size:48px">📁</div>
-            <h3>Past Analyses</h3>
-            <p style="color:#aaa">View and revisit your previously saved EDA reports and AI conversations.</p>
+        <div class="glass-card" style="text-align:center; min-height:180px;">
+            <div style="font-size:3rem; margin-bottom:12px">📁</div>
+            <h3 style="margin:0 0 8px; font-size:1.15rem">Past Analyses</h3>
+            <p style="color:var(--text-muted); font-size:.88rem; margin:0">
+                View and revisit your previously saved EDA reports and AI conversations.
+            </p>
         </div>
         """, unsafe_allow_html=True)
         st.markdown("")
-        if st.button("View Past Analyses", use_container_width=True):
+        if st.button("View Past Analyses", use_container_width=True, key="dash_past"):
             go("past")
 
     st.divider()
     st.markdown("### Recent Analyses")
+
     res = api("get", f"/store/list/{st.session_state['user_id']}")
     if res and res.status_code == 200:
         analyses = res.json().get("analyses", [])
         if analyses:
             for item in analyses[:5]:
-                col_a, col_b, col_c = st.columns([3, 2, 1])
-                with col_a:
-                    st.markdown(f"**{item['filename']}**")
-                with col_b:
-                    created = item["created_at"][:19].replace("T", " ")
-                    st.caption(created)
-                with col_c:
-                    if st.button("Open", key=f"open_{item['session_id']}"):
-                        with st.spinner("Loading..."):
-                            load_past_analysis(item["session_id"])
+                with st.container():
+                    col_a, col_b, col_c = st.columns([3, 2, 1])
+                    with col_a:
+                        st.markdown(f"**{item['filename']}**")
+                    with col_b:
+                        created = item["created_at"][:19].replace("T", " ")
+                        st.caption(created)
+                    with col_c:
+                        if st.button("Open", key=f"open_{item['session_id']}",
+                                     use_container_width=True):
+                            with st.spinner("Loading..."):
+                                load_past_analysis(item["session_id"])
+                    st.divider()
         else:
             st.info("No analyses yet. Start your first one above.")
     else:
@@ -191,21 +639,18 @@ def load_past_analysis(session_id: str):
         st.session_state["session_id"] = data["session_id"]
         st.session_state["chat_history"] = []
         st.session_state["active_tab"] = 0
+        st.session_state["overview_section"] = None
         api("post", "/api/reembed",
             json={"session_id": data["session_id"], "report": data["report"]})
-        go("analysis")
+        go("overview")
     else:
         st.error("Could not load analysis.")
 
 
 def page_past():
-    col1, col2 = st.columns([5, 1])
-    with col1:
-        st.markdown("## Past Analyses")
-    with col2:
-        if st.button("Back to Dashboard"):
-            go("dashboard")
+    nav_bar([("DS Analyzer", None), ("Dashboard", "dashboard"), ("Past Analyses", None)])
 
+    st.markdown("## Past Analyses")
     st.divider()
 
     res = api("get", f"/store/list/{st.session_state['user_id']}")
@@ -228,13 +673,17 @@ def page_past():
                 created = item["created_at"][:19].replace("T", " ")
                 st.caption(f"Created: {created}")
             with c3:
-                if st.button("Open", key=f"past_open_{item['session_id']}", use_container_width=True):
+                if st.button("Open", key=f"past_open_{item['session_id']}",
+                             use_container_width=True):
                     with st.spinner("Loading..."):
                         load_past_analysis(item["session_id"])
             with c4:
-                if st.button("Delete", key=f"del_{item['session_id']}", use_container_width=True):
-                    del_res = api("delete",
-                                  f"/store/delete/{item['session_id']}/{st.session_state['user_id']}")
+                if st.button("Delete", key=f"del_{item['session_id']}",
+                             use_container_width=True):
+                    del_res = api(
+                        "delete",
+                        f"/store/delete/{item['session_id']}/{st.session_state['user_id']}"
+                    )
                     if del_res and del_res.status_code == 200:
                         st.success("Deleted.")
                         st.rerun()
@@ -244,72 +693,99 @@ def page_past():
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# PAGE: ANALYSIS DASHBOARD
+# PAGE: ANALYSIS UPLOAD
 # ════════════════════════════════════════════════════════════════════════════
 def page_analysis():
-    col1, col2, col3 = st.columns([4, 1, 1])
-    with col1:
-        st.markdown("## Dataset Quality Evaluator")
-    with col2:
-        if st.button("Dashboard", use_container_width=True):
-            go("dashboard")
-    with col3:
-        if st.button("Logout", use_container_width=True):
-            logout()
+    nav_bar([("DS Analyzer", None), ("Dashboard", "dashboard"), ("New Analysis", None)])
 
-    # ── Upload ────────────────────────────────────────────────────────────────
-    if not st.session_state["report"]:
-        st.divider()
-        uploaded_file = st.file_uploader(
-            "Upload your dataset (CSV or Excel)",
-            type=["csv", "xlsx", "xls"]
-        )
-        if uploaded_file:
-            progress = st.progress(0, text="Reading file...")
-            try:
-                progress.progress(20, text="Sending to analysis engine...")
-                res = api("post", "/api/analyze",
-                          files={"file": (uploaded_file.name,
-                                          uploaded_file.getvalue(),
-                                          uploaded_file.type)})
-                progress.progress(80, text="Processing results...")
-
-                if res and res.status_code == 200:
-                    data = res.json()
-                    st.session_state["report"] = data["report"]
-                    st.session_state["session_id"] = data["session_id"]
-                    st.session_state["chat_history"] = []
-
-                    api("post", "/store/save", json={
-                        "session_id": data["session_id"],
-                        "filename": uploaded_file.name,
-                        "report": data["report"]
-                    })
-
-                    progress.progress(100, text="Done!")
-                    if data["report"].get("sampled"):
-                        st.warning(
-                            f"Large dataset — {data['report']['total_rows_original']:,} rows. "
-                            f"Analysis on 50,000-row sample."
-                        )
-                    st.success("Analysis complete and saved!")
-                    st.rerun()
-                else:
-                    progress.empty()
-                    detail = res.json().get("detail", "Unknown") if res else "No response"
-                    st.error(f"Error: {detail}")
-            except Exception as e:
-                progress.empty()
-                st.error(str(e))
-        return
-
-    # ── Report loaded ─────────────────────────────────────────────────────────
-    report = st.session_state["report"]
-    session_id = st.session_state["session_id"]
-
+    st.markdown("## Upload Dataset")
+    st.markdown("<p style='color:var(--text-muted)'>Upload a CSV or Excel file to begin your EDA.</p>",
+                unsafe_allow_html=True)
     st.divider()
 
-    # Metric cards
+    uploaded_file = st.file_uploader(
+        "Choose your dataset (CSV or Excel)",
+        type=["csv", "xlsx", "xls"]
+    )
+
+    # Guard: prevent multiple analysis runs on Streamlit reruns
+    if uploaded_file and not st.session_state.get("analyzing"):
+        st.session_state["analyzing"] = True
+        progress = st.progress(0, text="Reading file...")
+        try:
+            progress.progress(20, text="Sending to analysis engine...")
+            res = api("post", "/api/analyze",
+                      files={"file": (uploaded_file.name,
+                                      uploaded_file.getvalue(),
+                                      uploaded_file.type)})
+            progress.progress(80, text="Processing results...")
+
+            if res and res.status_code == 200:
+                data = res.json()
+                st.session_state["report"] = data["report"]
+                st.session_state["session_id"] = data["session_id"]
+                st.session_state["chat_history"] = []
+                st.session_state["overview_section"] = None
+                st.session_state["analyzing"] = False
+
+                api("post", "/store/save", json={
+                    "session_id": data["session_id"],
+                    "filename": uploaded_file.name,
+                    "report": data["report"]
+                })
+
+                progress.progress(100, text="Done!")
+                if data["report"].get("sampled"):
+                    st.warning(
+                        f"Large dataset — {data['report']['total_rows_original']:,} rows. "
+                        f"Analysis on 50,000-row sample."
+                    )
+                st.success("Analysis complete and saved!")
+                go("overview")
+            else:
+                st.session_state["analyzing"] = False
+                progress.empty()
+                detail = res.json().get("detail", "Unknown") if res else "No response"
+                st.error(f"Error: {detail}")
+        except Exception as e:
+            st.session_state["analyzing"] = False
+            progress.empty()
+            st.error(str(e))
+    elif uploaded_file and st.session_state.get("analyzing"):
+        st.info("Analysis in progress, please wait...")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: OVERVIEW  (hub with category widgets)
+# ════════════════════════════════════════════════════════════════════════════
+CATEGORY_WIDGETS = [
+    {"key": "missing_values",    "icon": "🕳️",  "title": "Missing Values",    "desc": "Detect & visualize nulls"},
+    {"key": "outliers",          "icon": "⚡",  "title": "Outliers",           "desc": "Z-score anomaly detection"},
+    {"key": "distributions",     "icon": "📈",  "title": "Distributions",      "desc": "Column histograms & skew"},
+    {"key": "class_imbalance",   "icon": "⚖️",  "title": "Class Imbalance",   "desc": "Target class balance check"},
+    {"key": "correlations",      "icon": "🔗",  "title": "Correlations",       "desc": "Feature correlation heatmap"},
+    {"key": "feature_importance","icon": "🎯",  "title": "Feature Importance", "desc": "Random forest importance"},
+    {"key": "column_stats",      "icon": "📋",  "title": "Column Stats",       "desc": "Descriptive statistics"},
+    {"key": "recommendations",   "icon": "💡",  "title": "Recommendations",    "desc": "Actionable data quality tips"},
+    {"key": "ai_assistant",      "icon": "🤖",  "title": "AI Assistant",       "desc": "Chat with your data"},
+    {"key": "preview",           "icon": "👁️",  "title": "Data Preview",       "desc": "Raw data & type overview"},
+]
+
+
+def page_overview():
+    report = st.session_state.get("report")
+    if not report:
+        go("dashboard")
+        return
+
+    nav_bar(
+        [("DS Analyzer", None), ("Dashboard", "dashboard"), ("Overview", None)],
+        show_new_analysis=True
+    )
+
+    st.markdown("## Analysis Overview")
+
+    # ── Metric cards ──────────────────────────────────────────────────────────
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
         st.metric("Rows", f"{report['shape']['rows']:,}")
@@ -327,23 +803,97 @@ def page_analysis():
 
     st.divider()
 
-    # Tab nav
-    tab_names = [
-        "Preview", "Missing Values", "Outliers", "Distributions",
-        "Class Imbalance", "Correlations", "Feature Importance",
-        "Column Stats", "Recommendations", "AI Assistant"
-    ]
-    selected_tab = st.radio(
-        label="", options=tab_names,
-        index=st.session_state["active_tab"],
-        horizontal=True, key="tab_selector",
+    # ── PDF report download ───────────────────────────────────────────────────
+    session_id = st.session_state.get("session_id")
+    with st.expander("📄 Generate PDF Report", expanded=False):
+        st.markdown("Download a full PDF of this EDA report.")
+        if st.button("Generate PDF", type="primary", key="ov_pdf"):
+            with st.spinner("Generating PDF..."):
+                pdf_res = api("get", f"/api/download/{session_id}")
+            if pdf_res and pdf_res.status_code == 200:
+                st.download_button(
+                    "⬇️ Download PDF", data=pdf_res.content,
+                    file_name=f"eda_report_{session_id}.pdf",
+                    mime="application/pdf",
+                    key="ov_pdf_dl"
+                )
+            else:
+                st.error("Failed to generate PDF.")
+
+    st.markdown("### Explore Categories")
+    st.markdown("<p style='color:var(--text-muted); margin-top:-10px; font-size:.88rem'>"
+                "Click any card to dive deeper into that analysis.</p>",
+                unsafe_allow_html=True)
+    st.markdown("")
+
+    # ── Category widget grid (2 rows × 5 cols) ────────────────────────────────
+    rows = [CATEGORY_WIDGETS[:5], CATEGORY_WIDGETS[5:]]
+    for row in rows:
+        cols = st.columns(5, gap="small")
+        for col, widget in zip(cols, row):
+            with col:
+                st.markdown(f"""
+                <div class="cat-card" id="cat_{widget['key']}">
+                    <div class="icon">{widget['icon']}</div>
+                    <div class="title">{widget['title']}</div>
+                    <div class="desc">{widget['desc']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                if st.button("Open →", key=f"cat_{widget['key']}_btn",
+                             use_container_width=True):
+                    go("detail", overview_section=widget["key"])
+        st.markdown("")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAGE: DETAIL  (individual analysis section)
+# ════════════════════════════════════════════════════════════════════════════
+def page_detail():
+    report = st.session_state.get("report")
+    if not report:
+        go("dashboard")
+        return
+
+    session_id = st.session_state.get("session_id")
+    section = st.session_state.get("overview_section", "preview")
+
+    # Build breadcrumb title
+    section_meta = {w["key"]: w for w in CATEGORY_WIDGETS}
+    section_title = section_meta.get(section, {}).get("title", section.replace("_", " ").title())
+
+    nav_bar(
+        [("DS Analyzer", None), ("Dashboard", "dashboard"),
+         ("Overview", "overview"), (section_title, None)],
+        show_new_analysis=True
+    )
+
+    # ── Section navigation pills ──────────────────────────────────────────────
+    tab_keys = [w["key"] for w in CATEGORY_WIDGETS]
+    tab_labels = [f"{w['icon']} {w['title']}" for w in CATEGORY_WIDGETS]
+    current_idx = tab_keys.index(section) if section in tab_keys else 0
+
+    selected_label = st.radio(
+        label="", options=tab_labels,
+        index=current_idx,
+        horizontal=True, key="detail_tab",
         label_visibility="collapsed"
     )
-    st.session_state["active_tab"] = tab_names.index(selected_tab)
+    selected_key = tab_keys[tab_labels.index(selected_label)]
+    if selected_key != section:
+        st.session_state["overview_section"] = selected_key
+        st.rerun()
+
     st.divider()
 
-    # ── Preview ───────────────────────────────────────────────────────────────
-    if selected_tab == "Preview":
+    back_col, _ = st.columns([1, 6])
+    with back_col:
+        if st.button("← Back to Overview", key="back_overview"):
+            go("overview")
+
+    st.markdown("")
+
+    # ── PREVIEW ───────────────────────────────────────────────────────────────
+    if section == "preview":
         st.subheader("Dataset Preview")
         preview = report.get("dataset_preview", {})
         if preview:
@@ -361,8 +911,8 @@ def page_analysis():
         st.plotly_chart(fig, use_container_width=True)
         st.dataframe(dtype_df, use_container_width=True)
 
-    # ── Missing Values ────────────────────────────────────────────────────────
-    elif selected_tab == "Missing Values":
+    # ── MISSING VALUES ────────────────────────────────────────────────────────
+    elif section == "missing_values":
         st.subheader("Missing Values")
         if report["missing"]:
             miss_df = pd.DataFrame([
@@ -375,10 +925,10 @@ def page_analysis():
             st.plotly_chart(fig, use_container_width=True)
             st.dataframe(miss_df, use_container_width=True)
         else:
-            st.success("No missing values found.")
+            st.success("✅ No missing values found.")
 
-    # ── Outliers ──────────────────────────────────────────────────────────────
-    elif selected_tab == "Outliers":
+    # ── OUTLIERS ──────────────────────────────────────────────────────────────
+    elif section == "outliers":
         st.subheader("Outliers (Z-score > 3)")
         if report["outliers"]:
             out_df = pd.DataFrame([
@@ -391,10 +941,10 @@ def page_analysis():
             st.plotly_chart(fig, use_container_width=True)
             st.dataframe(out_df, use_container_width=True)
         else:
-            st.success("No significant outliers detected.")
+            st.success("✅ No significant outliers detected.")
 
-    # ── Distributions ─────────────────────────────────────────────────────────
-    elif selected_tab == "Distributions":
+    # ── DISTRIBUTIONS ─────────────────────────────────────────────────────────
+    elif section == "distributions":
         st.subheader("Column Distributions")
         distributions = report.get("distributions", {})
         if distributions:
@@ -417,11 +967,11 @@ def page_analysis():
                         fig = gobj.Figure()
                         fig.add_trace(gobj.Bar(
                             x=d["bin_centers"], y=d["counts"],
-                            marker_color="steelblue"
+                            marker_color="#6366f1"
                         ))
                         if "mean" in s:
                             fig.add_vline(
-                                x=s["mean"], line_dash="dash", line_color="red",
+                                x=s["mean"], line_dash="dash", line_color="#ef4444",
                                 annotation_text=f"Mean: {s['mean']}"
                             )
                         fig.update_layout(
@@ -441,8 +991,8 @@ def page_analysis():
         else:
             st.info("No numeric columns found.")
 
-    # ── Class Imbalance ───────────────────────────────────────────────────────
-    elif selected_tab == "Class Imbalance":
+    # ── CLASS IMBALANCE ───────────────────────────────────────────────────────
+    elif section == "class_imbalance":
         st.subheader("Class Imbalance")
         if report["class_imbalance"]:
             for col, info in report["class_imbalance"].items():
@@ -462,10 +1012,10 @@ def page_analysis():
                     st.plotly_chart(fig, use_container_width=True)
                 st.divider()
         else:
-            st.success("No class imbalance issues found.")
+            st.success("✅ No class imbalance issues found.")
 
-    # ── Correlations ──────────────────────────────────────────────────────────
-    elif selected_tab == "Correlations":
+    # ── CORRELATIONS ──────────────────────────────────────────────────────────
+    elif section == "correlations":
         st.subheader("Correlation Matrix")
         matrix = report["correlations"].get("matrix", {})
         if matrix:
@@ -482,12 +1032,12 @@ def page_analysis():
                 st.warning(f"**{len(high)} highly correlated pairs (|r| > 0.8):**")
                 st.dataframe(pd.DataFrame(high), use_container_width=True)
             else:
-                st.success("No high correlations found.")
+                st.success("✅ No high correlations found.")
         else:
             st.info("Not enough numeric columns.")
 
-    # ── Feature Importance ────────────────────────────────────────────────────
-    elif selected_tab == "Feature Importance":
+    # ── FEATURE IMPORTANCE ────────────────────────────────────────────────────
+    elif section == "feature_importance":
         st.subheader("Feature Importance")
         fi = report.get("feature_importance", {})
         if fi.get("available"):
@@ -498,7 +1048,7 @@ def page_analysis():
             fig = px.bar(
                 fi_df, x="importance", y="feature", orientation="h",
                 color="signal",
-                color_discrete_map={"High": "#4ade80", "Medium": "#fbbf24", "Low": "#f87171"},
+                color_discrete_map={"High": "#10b981", "Medium": "#f59e0b", "Low": "#ef4444"},
                 title=f"Feature Importance → '{fi['target_column']}'",
                 template="plotly_white"
             )
@@ -515,8 +1065,8 @@ def page_analysis():
         else:
             st.warning(f"Not available: {fi.get('reason', 'unknown')}")
 
-    # ── Column Stats ──────────────────────────────────────────────────────────
-    elif selected_tab == "Column Stats":
+    # ── COLUMN STATS ──────────────────────────────────────────────────────────
+    elif section == "column_stats":
         st.subheader("Column Statistics")
         numeric_rows, cat_rows = [], []
         for col, s in report["column_stats"].items():
@@ -545,8 +1095,8 @@ def page_analysis():
             st.markdown("**Categorical Columns**")
             st.dataframe(pd.DataFrame(cat_rows), use_container_width=True)
 
-    # ── Recommendations ───────────────────────────────────────────────────────
-    elif selected_tab == "Recommendations":
+    # ── RECOMMENDATIONS ───────────────────────────────────────────────────────
+    elif section == "recommendations":
         st.subheader("Actionable Recommendations")
         if report["recommendations"]:
             for i, rec in enumerate(report["recommendations"]):
@@ -561,10 +1111,10 @@ def page_analysis():
                 else:
                     st.info(f"💡 **{i+1}.** {rec}")
         else:
-            st.success("Dataset looks clean!")
+            st.success("✅ Dataset looks clean!")
 
-    # ── AI Assistant ──────────────────────────────────────────────────────────
-    elif selected_tab == "AI Assistant":
+    # ── AI ASSISTANT ──────────────────────────────────────────────────────────
+    elif section == "ai_assistant":
         st.subheader("Ask the AI about your dataset")
         st.caption("The AI has full context of your EDA report.")
 
@@ -575,7 +1125,7 @@ def page_analysis():
                 "Which features should I drop?",
                 "Explain the correlation heatmap",
                 "Which columns need transformation?",
-                "What is the most important feature?"
+                "What is the most important feature?",
             ]
             cols = st.columns(len(suggestions))
             for i, s in enumerate(suggestions):
@@ -583,13 +1133,6 @@ def page_analysis():
                     if st.button(s, key=f"sugg_{i}", use_container_width=True):
                         st.session_state["chat_history"].append(
                             {"role": "user", "content": s})
-                        with st.spinner("Thinking..."):
-                            res = api("post", "/api/chat",
-                                      json={"session_id": session_id, "question": s,
-                                            "history": st.session_state["chat_history"]})
-                            answer = res.json()["answer"] if res and res.status_code == 200 else "Error"
-                        st.session_state["chat_history"].append(
-                            {"role": "assistant", "content": answer})
                         st.rerun()
             st.divider()
 
@@ -597,50 +1140,36 @@ def page_analysis():
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
 
-        question = st.chat_input("Ask anything about your dataset...")
-        if question:
-            st.session_state["chat_history"].append({"role": "user", "content": question})
-            with st.spinner("Thinking..."):
-                res = api("post", "/api/chat",
-                          json={"session_id": session_id, "question": question,
-                                "history": st.session_state["chat_history"]})
-                answer = res.json()["answer"] if res and res.status_code == 200 else "Error reaching AI."
+        # If last message is from user with no assistant reply yet, fetch answer now
+        history = st.session_state["chat_history"]
+        if history and history[-1]["role"] == "user":
+            pending_q = history[-1]["content"]
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    res = api("post", "/api/chat",
+                              json={"session_id": session_id, "question": pending_q,
+                                    "history": history})
+                    answer = res.json()["answer"] if res and res.status_code == 200 else "Error reaching AI."
             st.session_state["chat_history"].append(
                 {"role": "assistant", "content": answer})
             st.rerun()
 
+        question = st.chat_input("Ask anything about your dataset...")
+        if question:
+            st.session_state["chat_history"].append({"role": "user", "content": question})
+            st.rerun()
+
         if st.session_state["chat_history"]:
-            if st.button("Clear chat"):
+            if st.button("Clear chat", key="clear_chat"):
                 st.session_state["chat_history"] = []
                 st.rerun()
-
-    # ── Download PDF ──────────────────────────────────────────────────────────
-    st.divider()
-    c1, c2 = st.columns([1, 4])
-    with c1:
-        if st.button("Generate PDF Report", type="primary"):
-            with st.spinner("Generating PDF..."):
-                pdf_res = api("get", f"/api/download/{session_id}")
-            if pdf_res and pdf_res.status_code == 200:
-                st.download_button(
-                    "Download PDF", data=pdf_res.content,
-                    file_name=f"eda_report_{session_id}.pdf",
-                    mime="application/pdf"
-                )
-            else:
-                st.error("Failed to generate PDF.")
-    with c2:
-        if st.button("Start New Analysis"):
-            st.session_state["report"] = None
-            st.session_state["session_id"] = None
-            st.session_state["chat_history"] = []
-            st.session_state["active_tab"] = 0
-            st.rerun()
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # ROUTER
 # ════════════════════════════════════════════════════════════════════════════
+inject_theme()
+
 if not st.session_state["authenticated"]:
     page_login()
 else:
@@ -649,7 +1178,18 @@ else:
         page_dashboard()
     elif page == "analysis":
         page_analysis()
+    elif page == "overview":
+        if st.session_state.get("report"):
+            page_overview()
+        else:
+            go("analysis")
+    elif page == "detail":
+        if st.session_state.get("report"):
+            page_detail()
+        else:
+            go("analysis")
     elif page == "past":
         page_past()
     else:
         page_login()
+        
