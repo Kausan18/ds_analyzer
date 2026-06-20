@@ -1,0 +1,31 @@
+services:
+  # ── Backend: FastAPI on Render Web Service ────────────────────────────────
+  - type: web
+    name: ds-analyzer-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SUPABASE_URL
+        sync: false          # set manually in Render dashboard
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+    healthCheckPath: /ping
+
+  # ── Frontend: Streamlit on Render Web Service ─────────────────────────────
+  # NOTE: Streamlit Cloud is the recommended / easiest path for the frontend.
+  # Only add this block if you want BOTH services on Render.
+  # - type: web
+  #   name: ds-analyzer-frontend
+  #   runtime: python
+  #   rootDir: frontend
+  #   buildCommand: pip install -r requirements.txt
+  #   startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+  #   envVars:
+  #     - key: BACKEND_URL
+  #       value: https://ds-analyzer-backend.onrender.com   # update after first deploy
