@@ -2,7 +2,7 @@
 
 **An AI-powered Exploratory Data Analysis tool** — upload a CSV or Excel file, get a full statistical report, ask questions about your data in plain English, and download a polished PDF report.
 
-🔗 **Live Demo**: [dsanalyzer.streamlit.app](https://dsanalyzer-jfnu4nign8xxggqd5xrw6t.streamlit.app) &nbsp;|&nbsp; **Backend API**: [ds-analyzer-backend.onrender.com/ping](https://ds-analyzer-backend.onrender.com/ping)
+🔗 **Live Demo**: [dsanalyzer.streamlit.app](https://dsanalyzer-kausty.streamlit.app/) &nbsp;|&nbsp; **Backend API**: [ds-analyzer-backend.onrender.com/ping](https://ds-analyzer.onrender.com)
 
 ---
 
